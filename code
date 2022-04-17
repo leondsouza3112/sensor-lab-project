@@ -1,0 +1,170 @@
+#include <SFE_BMP180.h>
+#include <Wire.h>
+#include <ESP8266WiFi.h>
+#include "DHT.h"
+
+#include "ThingSpeak.h"
+#include <ESP8266WiFi.h>
+const int trigPin1 = D6;
+const int echoPin1 = D7;
+#define redled D8
+#define grnled D4
+#define BUZZER D5 //buzzer pin
+unsigned long ch_no = 1698194;//Replace with Thingspeak Channel number
+const char * write_api = "3Z5OYT96QYP09VHJ";//Replace with Thingspeak write API
+char auth[] = "mwa0000017662554";
+String apiKey = "3Z5OYT96QYP09VHJ";
+const char *ssid =  "leon";
+const char *pass =  "leon3112";
+const char* server = "api.thingspeak.com";
+
+unsigned long startMillis;
+unsigned long currentMillis;
+const unsigned long period = 10000;
+DHT dht(D3, DHT11);
+SFE_BMP180 bmp;
+double T, P;
+char status;
+WiFiClient client;
+long duration1;
+int distance1;
+
+void setup() {
+
+pinMode(trigPin1, OUTPUT);
+  pinMode(echoPin1, INPUT);
+  pinMode(redled, OUTPUT);
+  pinMode(grnled, OUTPUT);
+  digitalWrite(redled, LOW);
+  digitalWrite(grnled, LOW);
+  Serial.begin(115200);
+  WiFi.begin(ssid, pass);
+  while (WiFi.status() != WL_CONNECTED)
+  {
+    delay(10000);
+    Serial.print(".");
+  }
+  Serial.println("WiFi connected");
+  Serial.println(WiFi.localIP());
+  ThingSpeak.begin(client);
+  startMillis = millis();  //initial start time
+
+
+  
+  Serial.begin(115200);
+  delay(10);
+  bmp.begin();
+  Wire.begin();
+  dht.begin();
+  WiFi.begin(ssid, pass);
+
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(10000);
+    Serial.print(".");
+  }
+  Serial.println("");
+  Serial.println("WiFi connected");
+}
+
+void loop() {
+{
+  digitalWrite(trigPin1, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin1, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin1, LOW);
+  duration1 = pulseIn(echoPin1, HIGH);
+  distance1 = duration1 * 0.034 / 2;
+  Serial.println(distance1);
+  if (distance1 <= 4)
+  {
+    digitalWrite(D8, HIGH);
+    tone(BUZZER, 300000);
+    digitalWrite(D4, LOW);
+    delay(1500);
+    noTone(BUZZER);
+  }
+  else
+  {
+    digitalWrite(D4, HIGH);
+    digitalWrite(D8, LOW);
+  }
+  currentMillis = millis();
+  if (currentMillis - startMillis >= period)
+  {
+    ThingSpeak.setField(5, distance1);
+    ThingSpeak.writeFields(ch_no, write_api);
+    startMillis = currentMillis;
+  }
+}
+
+
+
+  
+  //BMP180 sensor
+  status =  bmp.startTemperature();
+  if (status != 0) {
+    delay(status);
+    status = bmp.getTemperature(T);
+
+    status = bmp.startPressure(3);// 0 to 3
+    if (status != 0) {
+      delay(status);
+      status = bmp.getPressure(P, T);
+      if (status != 0) {
+
+      }
+    }
+  }
+
+  //DHT11 sensor
+  float h = dht.readHumidity();
+  float t = dht.readTemperature();
+
+  if (isnan(h) || isnan(t)) {
+    Serial.println("Failed to read from DHT sensor!");
+    return;
+  }
+
+  //Rain sensor
+  int r = analogRead(A0);
+  r = map(r, 0, 1024, 0, 100);
+
+
+  if (client.connect(server, 80)) {
+    String postStr = apiKey;
+    postStr += "&field1=";
+    postStr += String(t);
+    postStr += "&field2=";
+    postStr += String(h);
+    postStr += "&field3=";
+    postStr += String(P, 2);
+    postStr += "&field4=";
+    postStr += String(r);
+    postStr += "\r\n\r\n\r\n\r\n";
+
+    client.print("POST /update HTTP/1.1\n");
+    client.print("Host: api.thingspeak.com\n");
+    client.print("Connection: close\n");
+    client.print("X-THINGSPEAKAPIKEY: " + apiKey + "\n");
+    client.print("Content-Type: application/x-www-form-urlencoded\n");
+    client.print("Content-Length: ");
+    client.print(postStr.length());
+    client.print("\n\n\n\n");
+    client.print(postStr);
+  
+  
+    Serial.print("Temperature: ");
+    Serial.println(t);
+    Serial.print("Humidity: ");
+    Serial.println(h);
+    Serial.print("absolute pressure: ");
+    Serial.print(P, 2);
+    Serial.println("mb");
+    Serial.print("Rain");
+    Serial.println(r);
+
+  }
+  delay(10000);
+}
